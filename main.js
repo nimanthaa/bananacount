@@ -8,8 +8,10 @@ import { saveHighScore, getTopScores, subscribeToLiveLeaderboard } from './src/l
 import { renderUserDashboard } from './src/userDashboard.js';
 import { isAdmin, startSession, endSession, logActivity } from './src/adminManager.js';
 import { seedLevels, getLevelForScore } from './src/firestoreInit.js';
+import { AudioManager } from './src/audioManager.js';
 
 const auth = new AuthManager();
+const audio = new AudioManager();
 const app = document.getElementById('app');
 
 // Store unsubscribe function for live leaderboard
@@ -146,6 +148,7 @@ const renderGame = async (container) => {
                         <p style="color: var(--text-muted)">Welcome, <strong>${user.displayName || 'Player'}</strong></p>
                     </div>
                     <div style="display:flex; gap:0.75rem;">
+                        <button id="mute-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-vibrant); padding: 0.5rem 1rem; border-radius: 12px; cursor: pointer; font-size:1.2rem;">${audio.isMuted ? '🔇' : '🔊'}</button>
                         <button id="dashboard-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-vibrant); padding: 0.5rem 1rem; border-radius: 12px; cursor: pointer; font-weight:600;">Dashboard</button>
                         <button id="logout-btn" style="background: transparent; border: 1px solid var(--glass-border); color: rgba(248, 113, 113, 0.7); padding: 0.5rem 1rem; border-radius: 12px; cursor: pointer;">Logout</button>
                     </div>
@@ -276,8 +279,15 @@ function initGameLogic() {
         if (puzzle) {
             currentSolution = puzzle.solution;
             ui.updatePuzzle(puzzle.question);
+            audio.playBackground();
             timer.start();
         }
+    };
+
+    document.getElementById('mute-btn').onclick = () => {
+        const isMuted = audio.toggleMute();
+        document.getElementById('mute-btn').textContent = isMuted ? '🔇' : '🔊';
+        if (!isMuted) audio.playBackground();
     };
 
     document.getElementById('submit-btn').onclick = async () => {
@@ -331,6 +341,7 @@ function initGameLogic() {
     };
 
     document.getElementById('dashboard-btn').onclick = async () => {
+        audio.stopBackground();
         if (liveLeaderboardUnsub) {
             liveLeaderboardUnsub();
             liveLeaderboardUnsub = null;
@@ -340,6 +351,7 @@ function initGameLogic() {
     };
 
     document.getElementById('logout-btn').onclick = async () => {
+        audio.stopBackground();
         // Clean up live leaderboard listener before logout
         if (liveLeaderboardUnsub) {
             liveLeaderboardUnsub();
@@ -357,8 +369,9 @@ function initGameLogic() {
     };
     
     timer.onTimeUp = () => {
+        audio.playGameOver();
         ui.setMessage("Next puzzle...");
-        setTimeout(startNewRound, 1500);
+        setTimeout(startNewRound, 3000); // Wait longer for game over music to play a bit
     };
 
     startNewRound();
