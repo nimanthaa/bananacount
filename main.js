@@ -141,7 +141,7 @@ const renderGame = async (container) => {
 
     container.innerHTML = `
         <div class="game-container">
-            <main class="glass-card">
+            <main class="glass-card" id="game-panel">
                 <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                     <div>
                         <h1 style="color: var(--color-primary); font-size: 2rem;">Banana Count</h1>
@@ -158,16 +158,25 @@ const renderGame = async (container) => {
                     <div class="loader-spinner"></div>
                 </div>
 
-                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-                    <input type="number" id="answer-input" placeholder="Value?" style="flex: 1; font-size: 1.5rem; text-align: center;">
+                <div id="char-message" style="text-align: center; margin-top: 1rem; min-height: 1.5rem; font-weight: 600; color: var(--color-secondary);"></div>
+
+                <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <input type="number" id="answer-input" placeholder="Value?" style="flex: 1; font-size: 1.5rem; text-align: center; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); border-radius: 12px; color: white;">
                     <button id="submit-btn" class="btn-primary" style="width: auto; padding: 0 2.5rem; margin: 0;">SUBMIT</button>
                 </div>
             </main>
 
             <aside class="stats-grid">
-                <div class="glass-card" style="padding: 1.5rem; text-align: center;">
-                    <h2 id="timer-display" style="font-size: 3rem; font-weight: 800; color: var(--color-accent);">15</h2>
-                    <p class="stat-lbl">Seconds Left</p>
+                <div class="glass-card" style="padding: 1.5rem; text-align: center; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <svg width="120" height="120" viewBox="0 0 120 120" style="transform: rotate(-90deg);">
+                        <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="8" />
+                        <circle id="timer-progress" cx="60" cy="60" r="54" fill="none" stroke="var(--color-primary)" stroke-width="8" 
+                            stroke-dasharray="339.292" stroke-dashoffset="0" stroke-linecap="round" style="transition: stroke-dashoffset 1s linear, stroke 0.3s ease;" />
+                    </svg>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+                        <h2 id="timer-display" style="font-size: 2.5rem; font-weight: 800; color: white; margin: 0;">30</h2>
+                    </div>
+                    <p class="stat-lbl" style="margin-top: 0.5rem;">Seconds Left</p>
                 </div>
                 
                 <div class="glass-card" style="padding: 1.5rem;">
@@ -292,7 +301,9 @@ function initGameLogic() {
 
     document.getElementById('submit-btn').onclick = async () => {
         const val = ui.getInputValue();
-        if (val === currentSolution) {
+        // Use loose equality or cast just in case API returns string, 
+        // and ensure val isn't NaN (empty input)
+        if (!isNaN(val) && val == currentSolution) {
             const pts = Math.max(10, timer.timeLeft);
             const leveledUp = score.addPoints(pts);
             sessionRounds++;
