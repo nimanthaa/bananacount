@@ -33,6 +33,8 @@ export class AuthManager {
                 await ensureAdminDoc(user.uid);
             }
 
+            await this.setUserOnlineStatus(user.uid, true);
+
             await logActivity({
                 userId:   user.uid,
                 username: user.displayName || email,
@@ -61,6 +63,8 @@ export class AuthManager {
             // Create Firestore user document
             await createUserDoc(credential.user.uid, email, username);
 
+            await this.setUserOnlineStatus(credential.user.uid, true);
+
             await logActivity({
                 userId:   credential.user.uid,
                 username: username,
@@ -77,6 +81,7 @@ export class AuthManager {
     async logout() {
         const user = auth.currentUser;
         if (user) {
+            await this.setUserOnlineStatus(user.uid, false);
             await logActivity({
                 userId:   user.uid,
                 username: user.displayName || user.email,
@@ -85,6 +90,16 @@ export class AuthManager {
             });
         }
         await signOut(auth);
+    }
+
+    async setUserOnlineStatus(uid, isOnline) {
+        try {
+            const { db } = await import("./firebase.js");
+            const { doc, updateDoc } = await import("firebase/firestore");
+            await updateDoc(doc(db, "users", uid), { isOnline });
+        } catch (e) {
+            console.warn("Status update failed:", e);
+        }
     }
 
     isAuthenticated() {

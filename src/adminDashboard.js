@@ -1,5 +1,6 @@
 import {
     getAllUsers,
+    subscribeToUsers,
     createUser,
     updateUser,
     deleteUserDoc,
@@ -63,7 +64,7 @@ export async function renderAdminDashboard(container, onLogout) {
 
         switch (tab) {
             case 'overview':    activeLiveUnsub = await renderOverview(content); break;
-            case 'users':       await renderUsers(content); break;
+            case 'users':       activeLiveUnsub = await renderUsers(content); break;
             case 'leaderboard': await renderLeaderboard(content); break;
             case 'logs':        activeLiveUnsub = renderLogs(content); break;
             case 'monitor':     await renderMonitor(content); break;
@@ -129,8 +130,6 @@ async function renderOverview(container) {
 // ─── Users Tab ────────────────────────────────────────────────────────────────
 
 async function renderUsers(container) {
-    const users = await getAllUsers();
-
     container.innerHTML = `
         <div class="admin-page-header">
             <h2>User Management</h2>
@@ -179,16 +178,17 @@ async function renderUsers(container) {
                 <table class="admin-table" id="users-table">
                     <thead>
                         <tr>
+                            <th>Status</th>
                             <th>Username</th>
                             <th>Email</th>
                             <th>Role</th>
                             <th>Level</th>
-                            <th>Total Score</th>
+                            <th>Score</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="users-tbody">
-                        ${renderUserRows(users)}
+                        <tr><td colspan="7" style="text-align:center;padding:2rem">Loading users...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -196,12 +196,22 @@ async function renderUsers(container) {
     `;
 
     setupUserFormHandlers(container);
+
+    // Live subscription
+    const tbody = document.getElementById('users-tbody');
+    return subscribeToUsers((users) => {
+        if (tbody) tbody.innerHTML = renderUserRows(users);
+    });
 }
 
 function renderUserRows(users) {
-    if (!users.length) return `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem">No users found</td></tr>`;
+    if (!users.length) return `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem">No users found</td></tr>`;
     return users.map(u => `
         <tr data-uid="${u.id}">
+            <td>
+                <span class="status-indicator ${u.isOnline ? 'status-online' : 'status-offline'}"></span>
+                <span style="font-size:0.75rem; color:var(--text-muted)">${u.isOnline ? 'Online' : 'Offline'}</span>
+            </td>
             <td><strong>${u.username || '—'}</strong></td>
             <td>${u.email || '—'}</td>
             <td><span class="role-badge role-${u.role || 'user'}">${u.role || 'user'}</span></td>

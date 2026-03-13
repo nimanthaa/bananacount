@@ -46,6 +46,18 @@ export async function getAllUsers() {
 }
 
 /**
+ * Subscribes to all users for real-time status updates in admin panel.
+ * @param {Function} callback
+ * @returns {Function} unsubscribe
+ */
+export function subscribeToUsers(callback) {
+    const q = query(collection(db, USERS_COL), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (snap) => {
+        callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+}
+
+/**
  * Creates a new Firebase Auth user + Firestore doc.
  * @param {{email, password, username, role}} data
  */

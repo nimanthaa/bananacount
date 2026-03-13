@@ -482,3 +482,11 @@ auth.onAuthStateChanged(async (user) => {
         }
     }
 });
+
+// Best effort to set offline when tab closes
+window.addEventListener('beforeunload', () => {
+    const user = auth.getCurrentUser();
+    if (user) {
+        auth.setUserOnlineStatus(user.uid, false);
+    }
+});
