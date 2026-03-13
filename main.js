@@ -370,8 +370,13 @@ function initGameLogic() {
     
     timer.onTimeUp = () => {
         audio.playGameOver();
-        ui.setMessage("Next puzzle...");
-        setTimeout(startNewRound, 3000); // Wait longer for game over music to play a bit
+        ui.setMessage("GAME OVER! Resetting...", "error");
+        
+        // Reset game state
+        score.reset();
+        ui.updateStats(score.score, score.level);
+        
+        setTimeout(startNewRound, 3000);
     };
 
     startNewRound();
