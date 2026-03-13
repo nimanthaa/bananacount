@@ -1,6 +1,7 @@
 /**
  * Timer Module
  * Handles the game countdown.
+ * Duration can be updated between rounds to support difficulty scaling.
  */
 
 export class GameTimer {
@@ -12,9 +13,18 @@ export class GameTimer {
         this.onTimeUp = null;
     }
 
+    /**
+     * Update the time for the next round without restarting.
+     * @param {number} seconds
+     */
+    setDuration(seconds) {
+        this.initialTime = seconds;
+    }
+
     start() {
         this.stop();
         this.timeLeft = this.initialTime;
+        if (this.onTick) this.onTick(this.timeLeft); // show immediately
         this.timerId = setInterval(() => {
             this.timeLeft--;
             if (this.onTick) this.onTick(this.timeLeft);
