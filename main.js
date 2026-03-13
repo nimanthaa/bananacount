@@ -5,12 +5,24 @@ import { GameTimer } from './src/timer.js';
 import { ScoreManager } from './src/scoreManager.js';
 import { UIManager } from './src/uiManager.js';
 import { saveHighScore, getTopScores, subscribeToLiveLeaderboard } from './src/leaderboardManager.js';
-
-// Store unsubscribe function for live leaderboard
-let liveLeaderboardUnsub = null;
+import { renderAdminDashboard } from './src/adminDashboard.js';
+import { isAdmin } from './src/adminManager.js';
+import { seedLevels, getLevelForScore } from './src/firestoreInit.js';
+import { startSession, endSession, logActivity } from './src/adminManager.js';
 
 const auth = new AuthManager();
 const app = document.getElementById('app');
+
+// Store unsubscribe function for live leaderboard
+let liveLeaderboardUnsub = null;
+// Store current gameplay session ID
+let currentSessionId = null;
+let sessionStartTime = null;
+let sessionRounds = 0;
+let sessionPoints = 0;
+
+// Seed Firestore levels on app load (no-op if already seeded)
+seedLevels().catch(console.warn);
 
 // --- VIEW GENERATORS ---
 
@@ -45,8 +57,12 @@ const renderLogin = (container) => {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
         const res = await auth.login(email, password);
-        if (res.success) router.navigateTo('/game');
-        else document.getElementById('auth-error').textContent = res.message;
+        if (res.success) {
+            const adminFlag = await isAdmin(res.user.uid);
+            router.navigateTo(adminFlag ? '/admin' : '/game');
+        } else {
+            document.getElementById('auth-error').textContent = res.message;
+        }
     };
 
     document.getElementById('go-register').onclick = (e) => {
@@ -115,6 +131,13 @@ const renderGame = async (container) => {
         return;
     }
 
+    // Redirect admin away from game view
+    const adminFlag = await isAdmin(user.uid);
+    if (adminFlag) {
+        router.navigateTo('/admin');
+        return;
+    }
+
     container.innerHTML = `
         <div class="game-container">
             <main class="glass-card">
@@ -164,8 +187,29 @@ const renderGame = async (container) => {
         </div>
     `;
 
+    // Start a gameplay session
+    sessionStartTime = Date.now();
+    sessionRounds = 0;
+    sessionPoints = 0;
+    try {
+        currentSessionId = await startSession(user.uid, user.displayName || user.email);
+    } catch (e) { console.warn("Session start failed:", e); }
+
     initGameLogic();
     updateLeaderboard();
+};
+
+const renderAdmin = async (container) => {
+    const user = auth.getCurrentUser();
+    if (!user) { router.navigateTo('/login'); return; }
+
+    const adminFlag = await isAdmin(user.uid);
+    if (!adminFlag) { router.navigateTo('/game'); return; }
+
+    await renderAdminDashboard(container, async () => {
+        await auth.logout();
+        router.navigateTo('/login');
+    });
 };
 
 // --- LOGIC & HELPERS ---
@@ -223,14 +267,26 @@ function initGameLogic() {
     document.getElementById('submit-btn').onclick = async () => {
         const val = ui.getInputValue();
         if (val === currentSolution) {
-            score.addPoints(Math.max(10, timer.timeLeft));
+            const pts = Math.max(10, timer.timeLeft);
+            score.addPoints(pts);
+            sessionRounds++;
+            sessionPoints += pts;
             ui.updateStats(score.score, score.level);
             ui.setMessage("Boom! +Points.");
             
-            // Save to leaderboard if score is high enough
+            // Save to leaderboard
             const user = auth.getCurrentUser();
             if (user) {
                 await saveHighScore(user.displayName, score.score);
+
+                // Log score event
+                await logActivity({
+                    userId:   user.uid,
+                    username: user.displayName || user.email,
+                    action:   "score",
+                    details:  `Scored ${pts} pts (total: ${score.score})`
+                });
+
                 updateLeaderboard();
             }
             
@@ -245,6 +301,16 @@ function initGameLogic() {
         if (liveLeaderboardUnsub) {
             liveLeaderboardUnsub();
             liveLeaderboardUnsub = null;
+        }
+        // End gameplay session
+        if (currentSessionId) {
+            const durationSec = Math.floor((Date.now() - sessionStartTime) / 1000);
+            await endSession(currentSessionId, {
+                durationSec,
+                roundsPlayed: sessionRounds,
+                pointsEarned: sessionPoints
+            });
+            currentSessionId = null;
         }
         await auth.logout();
         router.navigateTo('/login');
@@ -266,21 +332,31 @@ function initGameLogic() {
 // --- ROUTER & ENTRY ---
 
 const routes = {
-    '/login': renderLogin,
+    '/login':    renderLogin,
     '/register': renderRegister,
-    '/game': renderGame
+    '/game':     renderGame,
+    '/admin':    renderAdmin
 };
 
 const router = new Router(app, routes);
 router.init();
 
-// Redirect strategy
-auth.onAuthStateChanged((user) => {
+// Auth state redirect strategy
+auth.onAuthStateChanged(async (user) => {
     if (user) {
-        if (window.location.pathname === '/login' || window.location.pathname === '/register') {
-            router.navigateTo('/game');
+        const path = window.location.pathname;
+        const adminFlag = await isAdmin(user.uid);
+
+        if (adminFlag) {
+            if (path !== '/admin') router.navigateTo('/admin');
+        } else {
+            if (path === '/login' || path === '/register' || path === '/admin') {
+                router.navigateTo('/game');
+            }
         }
     } else {
-        router.navigateTo('/login');
+        if (window.location.pathname !== '/register') {
+            router.navigateTo('/login');
+        }
     }
 });
