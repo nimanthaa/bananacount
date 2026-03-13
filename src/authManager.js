@@ -3,7 +3,11 @@ import {
     createUserWithEmailAndPassword, 
     updateProfile, 
     signOut, 
-    onAuthStateChanged 
+    onAuthStateChanged,
+    updatePassword,
+    reauthenticateWithCredential,
+    EmailAuthProvider,
+    deleteUser
 } from "firebase/auth";
 import { auth } from "./firebase.js";
 import { createUserDoc, ensureAdminDoc } from "./firestoreInit.js";
@@ -89,6 +93,50 @@ export class AuthManager {
 
     getCurrentUser() {
         return auth.currentUser;
+    }
+
+    async updatePassword(currentPassword, newPassword) {
+        const user = auth.currentUser;
+        if (!user) return { success: false, message: "Not logged in" };
+        try {
+            const credential = EmailAuthProvider.credential(user.email, currentPassword);
+            await reauthenticateWithCredential(user, credential);
+            await updatePassword(user, newPassword);
+            return { success: true };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    }
+
+    async updateUsername(newUsername) {
+        const user = auth.currentUser;
+        if (!user) return { success: false, message: "Not logged in" };
+        try {
+            await updateProfile(user, { displayName: newUsername });
+            await createUserDoc(user.uid, user.email, newUsername); // Re-use the doc creation helper to update
+            return { success: true };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
+    }
+
+    async deleteAccount(password) {
+        const user = auth.currentUser;
+        if (!user) return { success: false, message: "Not logged in" };
+        try {
+            const credential = EmailAuthProvider.credential(user.email, password);
+            await reauthenticateWithCredential(user, credential);
+            
+            // Clean up Firestore doc
+            const { deleteUserDoc } = await import("./adminManager.js");
+            await deleteUserDoc(user.uid);
+            
+            // Delete Auth user
+            await deleteUser(user);
+            return { success: true };
+        } catch (error) {
+            return { success: false, message: error.message };
+        }
     }
 
     onAuthStateChanged(callback) {
