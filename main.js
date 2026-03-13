@@ -250,12 +250,16 @@ async function updateLeaderboard() {
 function initGameLogic() {
     const ui = new UIManager();
     const score = new ScoreManager();
-    const timer = new GameTimer(15);
+    // Start at 30s; timer duration recalculates each round based on level
+    const timer = new GameTimer(30);
     let currentSolution = null;
 
     const startNewRound = async () => {
         ui.showLoading();
         timer.stop();
+        // Apply level-based duration before every new round
+        // Level 1 → 30s, Level 2 → 26s, Level 3 → 22s … min 6s
+        timer.setDuration(score.getTimerDuration());
         const puzzle = await fetchPuzzle();
         if (puzzle) {
             currentSolution = puzzle.solution;
@@ -268,12 +272,18 @@ function initGameLogic() {
         const val = ui.getInputValue();
         if (val === currentSolution) {
             const pts = Math.max(10, timer.timeLeft);
-            score.addPoints(pts);
+            const leveledUp = score.addPoints(pts);
             sessionRounds++;
             sessionPoints += pts;
             ui.updateStats(score.score, score.level);
-            ui.setMessage("Boom! +Points.");
-            
+
+            if (leveledUp) {
+                const newDuration = score.getTimerDuration();
+                ui.setMessage(`🎉 Level ${score.level}! Timer: ${newDuration}s`);
+            } else {
+                ui.setMessage("Boom! +Points.");
+            }
+
             // Save to leaderboard
             const user = auth.getCurrentUser();
             if (user) {
@@ -284,7 +294,7 @@ function initGameLogic() {
                     userId:   user.uid,
                     username: user.displayName || user.email,
                     action:   "score",
-                    details:  `Scored ${pts} pts (total: ${score.score})`
+                    details:  `Scored ${pts} pts (total: ${score.score}, level: ${score.level})`
                 });
 
                 updateLeaderboard();
