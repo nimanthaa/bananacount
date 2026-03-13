@@ -199,6 +199,31 @@ const renderGame = async (container) => {
                 </div>
             </aside>
         </div>
+
+        <!-- Game Over Modal -->
+        <div id="game-over-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1000; align-items:center; justify-content:center; backdrop-filter: blur(8px);">
+            <div class="glass-card" style="width: 90%; max-width: 450px; text-align: center; padding: 3rem 2rem; border-color: var(--color-primary);">
+                <span style="font-size: 4rem; display: block; margin-bottom: 1rem;">🍌</span>
+                <h2 style="font-size: 2.5rem; font-weight: 800; color: white; margin-bottom: 0.5rem;">GAME OVER</h2>
+                <p style="color: var(--text-muted); margin-bottom: 2rem;">You ran out of time!</p>
+                
+                <div style="background: rgba(255,255,255,0.05); border-radius: 16px; padding: 1.5rem; display: flex; justify-content: space-around; margin-bottom: 2rem;">
+                    <div>
+                        <div id="final-score" style="font-size: 2rem; font-weight: 800; color: var(--color-primary);">0</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Final Score</div>
+                    </div>
+                    <div>
+                        <div id="final-level" style="font-size: 2rem; font-weight: 800; color: var(--color-primary);">1</div>
+                        <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase;">Max Level</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <button id="play-again-btn" class="btn-primary" style="margin: 0; padding: 1.2rem;">PLAY AGAIN</button>
+                    <button id="back-to-hub-btn" style="background: transparent; border: 1px solid var(--glass-border); color: var(--text-vibrant); padding: 1rem; border-radius: 12px; cursor: pointer; font-weight: 600;">BACK TO DASHBOARD</button>
+                </div>
+            </div>
+        </div>
     `;
 
     // Start a gameplay session
@@ -379,15 +404,43 @@ function initGameLogic() {
         if (display) display.textContent = t;
     };
     
-    timer.onTimeUp = () => {
+    timer.onTimeUp = async () => {
         audio.playGameOver();
-        ui.setMessage("GAME OVER! Resetting...", "error");
+        timer.stop();
         
-        // Reset game state
+        // Show Modal
+        document.getElementById('final-score').textContent = score.score;
+        document.getElementById('final-level').textContent = score.level;
+        document.getElementById('game-over-modal').style.display = 'flex';
+        
+        // Finalize current session
+        await cleanupSession();
+    };
+
+    document.getElementById('play-again-btn').onclick = () => {
+        document.getElementById('game-over-modal').style.display = 'none';
         score.reset();
         ui.updateStats(score.score, score.level);
         
-        setTimeout(startNewRound, 3000);
+        // Start fresh session tracker
+        (async () => {
+            const user = auth.getCurrentUser();
+            sessionStartTime = Date.now();
+            sessionRounds = 0;
+            sessionPoints = 0;
+            try {
+                currentSessionId = await startSession(user.uid, user.displayName || user.email);
+            } catch (e) { console.warn(e); }
+            startNewRound();
+        })();
+    };
+
+    document.getElementById('back-to-hub-btn').onclick = () => {
+        if (liveLeaderboardUnsub) {
+            liveLeaderboardUnsub();
+            liveLeaderboardUnsub = null;
+        }
+        router.navigateTo('/dashboard');
     };
 
     startNewRound();
