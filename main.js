@@ -5,10 +5,9 @@ import { GameTimer } from './src/timer.js';
 import { ScoreManager } from './src/scoreManager.js';
 import { UIManager } from './src/uiManager.js';
 import { saveHighScore, getTopScores, subscribeToLiveLeaderboard } from './src/leaderboardManager.js';
-import { renderAdminDashboard } from './src/adminDashboard.js';
-import { isAdmin } from './src/adminManager.js';
+import { renderUserDashboard } from './src/userDashboard.js';
+import { isAdmin, startSession, endSession, logActivity } from './src/adminManager.js';
 import { seedLevels, getLevelForScore } from './src/firestoreInit.js';
-import { startSession, endSession, logActivity } from './src/adminManager.js';
 
 const auth = new AuthManager();
 const app = document.getElementById('app');
@@ -59,7 +58,7 @@ const renderLogin = (container) => {
         const res = await auth.login(email, password);
         if (res.success) {
             const adminFlag = await isAdmin(res.user.uid);
-            router.navigateTo(adminFlag ? '/admin' : '/game');
+            router.navigateTo(adminFlag ? '/admin' : '/dashboard');
         } else {
             document.getElementById('auth-error').textContent = res.message;
         }
@@ -114,7 +113,7 @@ const renderRegister = (container) => {
         const confirm = document.getElementById('reg-confirm').value;
         
         const res = await auth.register(email, password, confirm, username);
-        if (res.success) router.navigateTo('/game');
+        if (res.success) router.navigateTo('/dashboard');
         else document.getElementById('reg-error').textContent = res.message;
     };
 
@@ -146,7 +145,10 @@ const renderGame = async (container) => {
                         <h1 style="color: var(--color-primary); font-size: 2rem;">Banana Count</h1>
                         <p style="color: var(--text-muted)">Welcome, <strong>${user.displayName || 'Player'}</strong></p>
                     </div>
-                    <button id="logout-btn" style="background: transparent; border: 1px solid var(--glass-border); color: var(--text-muted); padding: 0.5rem 1rem; border-radius: 12px; cursor: pointer;">Logout</button>
+                    <div style="display:flex; gap:0.75rem;">
+                        <button id="dashboard-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-vibrant); padding: 0.5rem 1rem; border-radius: 12px; cursor: pointer; font-weight:600;">Dashboard</button>
+                        <button id="logout-btn" style="background: transparent; border: 1px solid var(--glass-border); color: rgba(248, 113, 113, 0.7); padding: 0.5rem 1rem; border-radius: 12px; cursor: pointer;">Logout</button>
+                    </div>
                 </header>
 
                 <div class="puzzle-container" id="puzzle-host">
@@ -210,6 +212,16 @@ const renderAdmin = async (container) => {
         await auth.logout();
         router.navigateTo('/login');
     });
+};
+
+const renderDashboard = async (container) => {
+    const user = auth.getCurrentUser();
+    if (!user) { router.navigateTo('/login'); return; }
+
+    const adminFlag = await isAdmin(user.uid);
+    if (adminFlag) { router.navigateTo('/admin'); return; }
+
+    await renderUserDashboard(container, auth, router);
 };
 
 // --- LOGIC & HELPERS ---
@@ -306,13 +318,7 @@ function initGameLogic() {
         }
     };
 
-    document.getElementById('logout-btn').onclick = async () => {
-        // Clean up live leaderboard listener before logout
-        if (liveLeaderboardUnsub) {
-            liveLeaderboardUnsub();
-            liveLeaderboardUnsub = null;
-        }
-        // End gameplay session
+    const cleanupSession = async () => {
         if (currentSessionId) {
             const durationSec = Math.floor((Date.now() - sessionStartTime) / 1000);
             await endSession(currentSessionId, {
@@ -322,6 +328,25 @@ function initGameLogic() {
             });
             currentSessionId = null;
         }
+    };
+
+    document.getElementById('dashboard-btn').onclick = async () => {
+        if (liveLeaderboardUnsub) {
+            liveLeaderboardUnsub();
+            liveLeaderboardUnsub = null;
+        }
+        await cleanupSession();
+        router.navigateTo('/dashboard');
+    };
+
+    document.getElementById('logout-btn').onclick = async () => {
+        // Clean up live leaderboard listener before logout
+        if (liveLeaderboardUnsub) {
+            liveLeaderboardUnsub();
+            liveLeaderboardUnsub = null;
+        }
+        // End gameplay session
+        await cleanupSession();
         await auth.logout();
         router.navigateTo('/login');
     };
@@ -342,10 +367,11 @@ function initGameLogic() {
 // --- ROUTER & ENTRY ---
 
 const routes = {
-    '/login':    renderLogin,
-    '/register': renderRegister,
-    '/game':     renderGame,
-    '/admin':    renderAdmin
+    '/login':     renderLogin,
+    '/register':  renderRegister,
+    '/game':      renderGame,
+    '/admin':     renderAdmin,
+    '/dashboard': renderDashboard
 };
 
 const router = new Router(app, routes);
@@ -360,8 +386,8 @@ auth.onAuthStateChanged(async (user) => {
         if (adminFlag) {
             if (path !== '/admin') router.navigateTo('/admin');
         } else {
-            if (path === '/login' || path === '/register' || path === '/admin') {
-                router.navigateTo('/game');
+            if (path === '/login' || path === '/register' || path === '/admin' || path === '/game') {
+                router.navigateTo('/dashboard');
             }
         }
     } else {
