@@ -38,9 +38,6 @@ export async function renderAdminDashboard(container, onLogout) {
                     <button class="admin-nav-btn" data-tab="logs">
                         <span>📋</span> Activity Logs
                     </button>
-                    <button class="admin-nav-btn" data-tab="monitor">
-                        <span>🎮</span> Monitor
-                    </button>
                 </nav>
                 <button id="admin-logout-btn" class="admin-logout-btn">
                     <span>🚪</span> Logout
@@ -67,7 +64,6 @@ export async function renderAdminDashboard(container, onLogout) {
             case 'users':       activeLiveUnsub = await renderUsers(content); break;
             case 'leaderboard': await renderLeaderboard(content); break;
             case 'logs':        activeLiveUnsub = renderLogs(content); break;
-            case 'monitor':     await renderMonitor(content); break;
         }
     };
 
@@ -399,82 +395,3 @@ function renderLogs(container) {
     return unsub;
 }
 
-// ─── Gameplay Monitor Tab ─────────────────────────────────────────────────────
-
-async function renderMonitor(container) {
-    const sessions = await getGameplaySessions(100);
-
-    // Aggregate by user
-    const byUser = {};
-    sessions.forEach(s => {
-        if (!byUser[s.userId]) {
-            byUser[s.userId] = { username: s.username, sessions: 0, totalSec: 0, totalRounds: 0, totalPoints: 0 };
-        }
-        byUser[s.userId].sessions++;
-        byUser[s.userId].totalSec    += s.durationSec    || 0;
-        byUser[s.userId].totalRounds += s.roundsPlayed   || 0;
-        byUser[s.userId].totalPoints += s.pointsEarned   || 0;
-    });
-
-    const rows = Object.values(byUser).sort((a, b) => b.totalPoints - a.totalPoints);
-
-    container.innerHTML = `
-        <div class="admin-page-header">
-            <h2>Gameplay Monitor</h2>
-            <p>Aggregated per-player statistics from all sessions</p>
-        </div>
-        <div class="admin-card">
-            <div class="admin-table-wrap">
-                <table class="admin-table">
-                    <thead>
-                        <tr>
-                            <th>Player</th>
-                            <th>Sessions</th>
-                            <th>Total Play Time</th>
-                            <th>Rounds Played</th>
-                            <th>Points Earned</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows.length === 0
-                            ? '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">No sessions recorded yet</td></tr>'
-                            : rows.map(r => `
-                                <tr>
-                                    <td><strong>${r.username}</strong></td>
-                                    <td>${r.sessions}</td>
-                                    <td>${Math.floor(r.totalSec / 60)}m ${r.totalSec % 60}s</td>
-                                    <td>${r.totalRounds}</td>
-                                    <td style="color:var(--color-primary);font-weight:700;">${r.totalPoints}</td>
-                                </tr>
-                            `).join('')
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="admin-page-header" style="margin-top:2rem;">
-            <h2>Recent Sessions</h2>
-        </div>
-        <div class="admin-card">
-            <div class="admin-table-wrap">
-                <table class="admin-table">
-                    <thead>
-                        <tr><th>Player</th><th>Started</th><th>Duration</th><th>Rounds</th><th>Points</th></tr>
-                    </thead>
-                    <tbody>
-                        ${sessions.slice(0, 20).map(s => `
-                            <tr>
-                                <td><strong>${s.username}</strong></td>
-                                <td style="font-size:0.8rem;color:var(--text-muted)">${s.startedAt?.toDate?.()?.toLocaleString() || '—'}</td>
-                                <td>${s.durationSec || 0}s</td>
-                                <td>${s.roundsPlayed || 0}</td>
-                                <td style="color:var(--color-primary);font-weight:700;">${s.pointsEarned || 0}</td>
-                            </tr>
-                        `).join('') || '<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--text-muted)">No sessions</td></tr>'}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `;
-}
