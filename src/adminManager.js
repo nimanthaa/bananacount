@@ -50,10 +50,15 @@ export async function getAllUsers() {
  * @param {Function} callback
  * @returns {Function} unsubscribe
  */
-export function subscribeToUsers(callback) {
+export function subscribeToUsers(callback, onError) {
     const q = query(collection(db, USERS_COL), orderBy("createdAt", "desc"));
     return onSnapshot(q, (snap) => {
-        callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const users = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        console.log(`[AdminManager] Users update: ${users.length} found`);
+        callback(users);
+    }, (err) => {
+        console.error("[AdminManager] subscribeToUsers failed:", err);
+        if (onError) onError(err);
     });
 }
 

@@ -199,9 +199,18 @@ async function renderUsers(container) {
 
     // Live subscription
     const tbody = document.getElementById('users-tbody');
-    return subscribeToUsers((users) => {
-        if (tbody) tbody.innerHTML = renderUserRows(users);
-    });
+    return subscribeToUsers(
+        (users) => {
+            if (tbody) tbody.innerHTML = renderUserRows(users);
+        },
+        (err) => {
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#f87171;padding:2rem">
+                    <strong>Error:</strong> ${err.code === 'permission-denied' ? 'Permission Denied (Sign-in required)' : err.message}
+                </td></tr>`;
+            }
+        }
+    );
 }
 
 function renderUserRows(users) {
