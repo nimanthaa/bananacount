@@ -55,10 +55,19 @@ const renderLogin = (container) => {
 
     document.getElementById('login-form').onsubmit = async (e) => {
         e.preventDefault();
-        const email = document.getElementById('email').value;
+        const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
+
+        // Bypassing Firebase Auth for admin as requested
+        if (email === 'admin@gmail.com' && password === 'admin123') {
+            sessionStorage.setItem('adminMode', 'true');
+            router.navigateTo('/admin');
+            return;
+        }
+
         const res = await auth.login(email, password);
         if (res.success) {
+            sessionStorage.removeItem('adminMode');
             const adminFlag = await isAdmin(res.user.uid);
             router.navigateTo(adminFlag ? '/admin' : '/dashboard');
         } else {
@@ -132,7 +141,6 @@ const renderGame = async (container) => {
         return;
     }
 
-    // Redirect admin away from game view
     const adminFlag = await isAdmin(user.uid);
     if (adminFlag) {
         router.navigateTo('/admin');
@@ -190,7 +198,6 @@ const renderGame = async (container) => {
                     </div>
                 </div>
 
-                <!-- Leaderboard Section -->
                 <div class="glass-card" style="padding: 1.5rem;">
                     <h3 style="font-size: 1rem; text-transform: uppercase; color: var(--text-muted); text-align: center;">World Leaderboard</h3>
                     <ul class="leaderboard-list" id="leaderboard-list">
@@ -200,7 +207,6 @@ const renderGame = async (container) => {
             </aside>
         </div>
 
-        <!-- Game Over Modal -->
         <div id="game-over-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:1000; align-items:center; justify-content:center; backdrop-filter: blur(8px);">
             <div class="glass-card" style="width: 90%; max-width: 450px; text-align: center; padding: 3rem 2rem; border-color: var(--color-primary);">
                 <span style="font-size: 4rem; display: block; margin-bottom: 1rem;">🍌</span>
@@ -226,7 +232,6 @@ const renderGame = async (container) => {
         </div>
     `;
 
-    // Start a gameplay session
     sessionStartTime = Date.now();
     sessionRounds = 0;
     sessionPoints = 0;
@@ -240,14 +245,24 @@ const renderGame = async (container) => {
 
 const renderAdmin = async (container) => {
     const user = auth.getCurrentUser();
-    if (!user) { router.navigateTo('/login'); return; }
+    const isBypass = sessionStorage.getItem('adminMode') === 'true';
 
-    const adminFlag = await isAdmin(user.uid);
-    if (!adminFlag) { router.navigateTo('/game'); return; }
+    if (!user && !isBypass) { 
+        router.navigateTo('/login'); 
+        return; 
+    }
 
-    await renderAdminDashboard(container, async () => {
-        await auth.logout();
-        router.navigateTo('/login');
+    if (user) {
+        const adminFlag = await isAdmin(user.uid);
+        if (!adminFlag && !isBypass) { router.navigateTo('/game'); return; }
+    }
+
+    await import('./src/adminDashboard.js').then(m => {
+        m.renderAdminDashboard(container, async () => {
+            sessionStorage.removeItem('adminMode');
+            await auth.logout();
+            router.navigateTo('/login');
+        });
     });
 };
 
@@ -285,11 +300,9 @@ async function updateLeaderboard() {
     const list = document.getElementById('leaderboard-list');
     if (!list) return;
 
-    // Initial load from Firestore
     const scores = await getTopScores(5);
     renderLeaderboardScores(scores);
 
-    // Subscribe to live updates from Realtime Database
     if (liveLeaderboardUnsub) liveLeaderboardUnsub();
     liveLeaderboardUnsub = subscribeToLiveLeaderboard(5, (liveScores) => {
         renderLeaderboardScores(liveScores);
@@ -299,15 +312,12 @@ async function updateLeaderboard() {
 function initGameLogic() {
     const ui = new UIManager();
     const score = new ScoreManager();
-    // Start at 30s; timer duration recalculates each round based on level
     const timer = new GameTimer(30);
     let currentSolution = null;
 
     const startNewRound = async () => {
         ui.showLoading();
         timer.stop();
-        // Apply level-based duration before every new round
-        // Level 1 → 30s, Level 2 → 26s, Level 3 → 22s … min 6s
         timer.setDuration(score.getTimerDuration());
         const puzzle = await fetchPuzzle();
         if (puzzle) {
@@ -326,8 +336,6 @@ function initGameLogic() {
 
     document.getElementById('submit-btn').onclick = async () => {
         const val = ui.getInputValue();
-        // Use loose equality or cast just in case API returns string, 
-        // and ensure val isn't NaN (empty input)
         if (!isNaN(val) && val == currentSolution) {
             const pts = Math.max(10, timer.timeLeft);
             const leveledUp = score.addPoints(pts);
@@ -342,22 +350,17 @@ function initGameLogic() {
                 ui.setMessage("Boom! +Points.");
             }
 
-            // Save to leaderboard
             const user = auth.getCurrentUser();
             if (user) {
                 await saveHighScore(user.displayName, score.score);
-
-                // Log score event
                 await logActivity({
-                    userId:   user.uid,
+                    userId: user.uid,
                     username: user.displayName || user.email,
-                    action:   "score",
-                    details:  `Scored ${pts} pts (total: ${score.score}, level: ${score.level})`
+                    action: "score",
+                    details: `Scored ${pts} pts (total: ${score.score}, level: ${score.level})`
                 });
-
                 updateLeaderboard();
             }
-            
             setTimeout(startNewRound, 1000);
         } else {
             ui.setMessage("Try again!", "error");
@@ -388,12 +391,10 @@ function initGameLogic() {
 
     document.getElementById('logout-btn').onclick = async () => {
         audio.stopBackground();
-        // Clean up live leaderboard listener before logout
         if (liveLeaderboardUnsub) {
             liveLeaderboardUnsub();
             liveLeaderboardUnsub = null;
         }
-        // End gameplay session
         await cleanupSession();
         await auth.logout();
         router.navigateTo('/login');
@@ -401,19 +402,22 @@ function initGameLogic() {
 
     timer.onTick = (t) => {
         const display = document.getElementById('timer-display');
+        const progress = document.getElementById('timer-progress');
         if (display) display.textContent = t;
+        if (progress) {
+            const total = score.getTimerDuration();
+            const offset = 339.292 - (t / total) * 339.292;
+            progress.style.strokeDashoffset = offset;
+            progress.style.stroke = t <= 5 ? '#f87171' : 'var(--color-primary)';
+        }
     };
     
     timer.onTimeUp = async () => {
         audio.playGameOver();
         timer.stop();
-        
-        // Show Modal
         document.getElementById('final-score').textContent = score.score;
         document.getElementById('final-level').textContent = score.level;
         document.getElementById('game-over-modal').style.display = 'flex';
-        
-        // Finalize current session
         await cleanupSession();
     };
 
@@ -421,8 +425,6 @@ function initGameLogic() {
         document.getElementById('game-over-modal').style.display = 'none';
         score.reset();
         ui.updateStats(score.score, score.level);
-        
-        // Start fresh session tracker
         (async () => {
             const user = auth.getCurrentUser();
             sessionStartTime = Date.now();
@@ -459,11 +461,13 @@ const routes = {
 const router = new Router(app, routes);
 router.init();
 
-// Auth state redirect strategy
 auth.onAuthStateChanged(async (user) => {
-    if (user) {
-        const path = window.location.pathname;
-        const adminFlag = await isAdmin(user.uid);
+    const path = window.location.pathname;
+    const isBypass = sessionStorage.getItem('adminMode') === 'true';
+
+    if (user || isBypass) {
+        let adminFlag = isBypass;
+        if (user && !adminFlag) adminFlag = await isAdmin(user.uid);
 
         if (adminFlag) {
             if (path !== '/admin') router.navigateTo('/admin');
@@ -473,7 +477,7 @@ auth.onAuthStateChanged(async (user) => {
             }
         }
     } else {
-        if (window.location.pathname !== '/register') {
+        if (path !== '/login' && path !== '/register') {
             router.navigateTo('/login');
         }
     }
